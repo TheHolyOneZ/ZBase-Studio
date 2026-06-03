@@ -10,6 +10,7 @@
     <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-2EBD85?style=flat-square" />
     <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-2EBD85?style=flat-square" />
     <img alt="Built with Tauri" src="https://img.shields.io/badge/built%20with-Tauri%202-2EBD85?style=flat-square" />
+    <img alt="Beta" src="https://img.shields.io/badge/status-BETA-E0A53A?style=flat-square" />
   </p>
 
   <p>
