@@ -96,7 +96,6 @@ export default function DatabaseImportDialog({ open: isOpen, onClose, tabId }: D
 
   const engine = tab?.engine ?? "";
   const isPostgres = engine === "postgres";
-  const isMysql    = engine === "mysql" || engine === "mariadb";
   const engineLabel = isPostgres ? "PostgreSQL" : engine === "mariadb" ? "MariaDB" : "MySQL";
 
   async function handleBrowse() {
