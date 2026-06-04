@@ -2,7 +2,7 @@ use crate::error::Result;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
-use tauri::State;
+use tauri::{Emitter, State};
 
 const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const EDITOR_SIZE_LIMIT: u64 = 256 * 1024;
@@ -158,4 +158,195 @@ pub struct ExecuteSqlResult {
     pub statements_hint: usize,
     pub skipped_hint: usize,
     pub skipped_detail: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportSqlResult {
+    pub executed: usize,
+    pub failed: usize,
+    pub duration_ms: u64,
+    pub errors: Vec<ImportSqlError>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportSqlError {
+    pub index: usize,
+    pub preview: String,
+    pub message: String,
+}
+
+#[tauri::command]
+pub async fn execute_pg_sql_file(
+    app: tauri::AppHandle,
+    tab_id: String,
+    path: String,
+    stop_on_error: bool,
+    state: State<'_, AppState>,
+) -> Result<ImportSqlResult> {
+    let pool = state.require_pg(&tab_id)?;
+
+    let raw = tokio::task::spawn_blocking(move || std::fs::read_to_string(&path))
+        .await
+        .map_err(|e| crate::error::Error::Other(e.to_string()))??;
+
+    let stmts = crate::db::sql_splitter::split_pg(&raw);
+    let total = stmts.len();
+    let start = std::time::Instant::now();
+    let mut executed = 0usize;
+    let mut errors: Vec<ImportSqlError> = Vec::new();
+    let mut last_emit = std::time::Instant::now();
+
+    for (idx, stmt) in stmts.iter().enumerate() {
+        let stmt = stmt.trim();
+        if stmt.is_empty() { continue; }
+
+
+        let upper = stmt.trim_start_matches('-').trim_start_matches('/').trim_start_matches('*');
+        if upper.trim().is_empty() { continue; }
+
+
+        if is_pg_txn_control(stmt) {
+            executed += 1;
+            continue;
+        }
+
+        match sqlx::query(stmt).execute(pool.as_ref()).await {
+            Ok(_) => { executed += 1; }
+            Err(e) => {
+                let preview = stmt.chars().take(120).collect::<String>();
+                errors.push(ImportSqlError {
+                    index: idx,
+                    preview,
+                    message: e.to_string(),
+                });
+                if stop_on_error {
+                    break;
+                }
+            }
+        }
+
+        if last_emit.elapsed().as_millis() >= 200 {
+            let _ = app.emit(
+                &format!("import://progress/{tab_id}"),
+                serde_json::json!({ "written": idx + 1, "total": total }),
+            );
+            last_emit = std::time::Instant::now();
+        }
+    }
+
+    let _ = app.emit(
+        &format!("import://done/{tab_id}"),
+        serde_json::json!({ "written": executed }),
+    );
+
+    Ok(ImportSqlResult {
+        executed,
+        failed: errors.len(),
+        duration_ms: start.elapsed().as_millis() as u64,
+        errors,
+    })
+}
+
+fn is_pg_txn_control(stmt: &str) -> bool {
+    let upper = stmt
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("--"))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_uppercase();
+    let u = upper.trim_start();
+    matches!(u, "BEGIN" | "BEGIN WORK" | "BEGIN TRANSACTION"
+               | "COMMIT" | "COMMIT WORK" | "COMMIT TRANSACTION"
+               | "ROLLBACK" | "ROLLBACK WORK" | "ROLLBACK TRANSACTION")
+        || u.starts_with("SAVEPOINT ")
+        || u.starts_with("RELEASE SAVEPOINT")
+        || u.starts_with("ROLLBACK TO")
+}
+
+#[tauri::command]
+pub async fn execute_mysql_sql_file(
+    app: tauri::AppHandle,
+    tab_id: String,
+    path: String,
+    stop_on_error: bool,
+    state: State<'_, AppState>,
+) -> Result<ImportSqlResult> {
+    let (pool, _flavor) = state.require_mysql(&tab_id)?;
+
+    let raw = tokio::task::spawn_blocking(move || std::fs::read_to_string(&path))
+        .await
+        .map_err(|e| crate::error::Error::Other(e.to_string()))??;
+
+    let stmts = crate::db::sql_splitter::split_mysql(&raw);
+    let total = stmts.len();
+    let start = std::time::Instant::now();
+    let mut executed = 0usize;
+    let mut errors: Vec<ImportSqlError> = Vec::new();
+    let mut last_emit = std::time::Instant::now();
+
+    for (idx, stmt) in stmts.iter().enumerate() {
+        let stmt = stmt.trim();
+        if stmt.is_empty() { continue; }
+
+
+        if is_mysql_txn_control(stmt) {
+            executed += 1;
+            continue;
+        }
+
+
+        match sqlx::raw_sql(stmt).execute(pool.as_ref()).await {
+            Ok(_) => { executed += 1; }
+            Err(e) => {
+                let preview = stmt.chars().take(120).collect::<String>();
+                errors.push(ImportSqlError {
+                    index: idx,
+                    preview,
+                    message: e.to_string(),
+                });
+                if stop_on_error {
+                    break;
+                }
+            }
+        }
+
+        if last_emit.elapsed().as_millis() >= 200 {
+            let _ = app.emit(
+                &format!("import://progress/{tab_id}"),
+                serde_json::json!({ "written": idx + 1, "total": total }),
+            );
+            last_emit = std::time::Instant::now();
+        }
+    }
+
+    let _ = app.emit(
+        &format!("import://done/{tab_id}"),
+        serde_json::json!({ "written": executed }),
+    );
+
+    Ok(ImportSqlResult {
+        executed,
+        failed: errors.len(),
+        duration_ms: start.elapsed().as_millis() as u64,
+        errors,
+    })
+}
+
+fn is_mysql_txn_control(stmt: &str) -> bool {
+
+    let upper = stmt
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("--") && !l.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_uppercase();
+    matches!(
+        upper.trim_start(),
+        "BEGIN" | "BEGIN WORK" | "COMMIT" | "COMMIT WORK" | "ROLLBACK" | "ROLLBACK WORK"
+    ) || upper.trim_start().starts_with("START TRANSACTION")
+        || upper.trim_start().starts_with("SAVEPOINT ")
+        || upper.trim_start().starts_with("RELEASE SAVEPOINT")
+        || upper.trim_start().starts_with("ROLLBACK TO")
 }

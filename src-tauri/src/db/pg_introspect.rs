@@ -142,7 +142,7 @@ async fn get_pg_tables(pool: &sqlx::PgPool) -> Result<Vec<TableSchema>> {
         let indexes = get_pg_indexes(pool, &name).await?;
         let foreign_keys = get_pg_fks(pool, &name).await?;
         let row_count_estimate = get_pg_row_count(pool, &name).await;
-        tables.push(TableSchema { name, columns, indexes, foreign_keys, row_count_estimate });
+        tables.push(TableSchema { name, columns, indexes, foreign_keys, row_count_estimate, sql: String::new() });
     }
     Ok(tables)
 }

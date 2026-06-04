@@ -3,6 +3,8 @@ import type { ContextMenuItem, OpenTab, RecentEntry, RowFilter, SortSpec, TabId,
 import type { DbOverview, PgOverview, MysqlOverview, ExportProgress, SearchHit } from "../types/ipc";
 import type { SchemaSnapshot } from "../types/schema";
 import type { BuilderDraft, BuilderSelection } from "../types/builder";
+import type { ErDraft } from "../lib/erDraft";
+import { schemaToErDraft } from "../lib/erDraft";
 import type { PgBuilderDraft, PgBuilderSelection } from "../types/pgBuilder";
 import type { PgSchemaSnapshot } from "../types/pgSchema";
 import type { MysqlBuilderDraft, MysqlBuilderSelection } from "../types/mysqlBuilder";
@@ -43,6 +45,11 @@ interface State {
 
   erPositions: Record<TabId, Record<string, { x: number; y: number }>>;
   setErPositions: (id: TabId, positions: Record<string, { x: number; y: number }>) => void;
+
+  erEditMode: Record<TabId, boolean>;
+  setErEditMode: (id: TabId, on: boolean) => void;
+  erSelection: Record<TabId, { kind: "node" | "edge"; id: string } | null>;
+  setErSelection: (id: TabId, sel: { kind: "node" | "edge"; id: string } | null) => void;
 
 
   gridOffsets: Record<TabId, Record<string, number>>;
@@ -102,6 +109,8 @@ interface State {
   setTableExportTarget: (t: { tabId: string; table: string } | null) => void;
   dbExportTabId: string | null;
   setDbExportTabId: (id: string | null) => void;
+  dbImportTabId: string | null;
+  setDbImportTabId: (id: string | null) => void;
   editTableTarget: { tabId: string; table: string } | null;
   setEditTableTarget: (t: { tabId: string; table: string } | null) => void;
 
@@ -166,6 +175,25 @@ interface State {
   setMysqlBuilderSelection: (tabId: TabId, sel: MysqlBuilderSelection) => void;
   undoMysqlBuilderDraft: (tabId: TabId) => void;
   redoMysqlBuilderDraft: (tabId: TabId) => void;
+
+
+  erDrafts: Record<TabId, ErDraft>;
+  erDraftSelection: Record<TabId, BuilderSelection>;
+  erDraftHistory: Record<TabId, ErDraft[]>;
+  erDraftFuture: Record<TabId, ErDraft[]>;
+  _erDraftHistoryTs: Record<TabId, number>;
+  initErDraft: (tabId: TabId, snapshot: import("../types/schema").SchemaSnapshot) => void;
+  updateErDraft: (tabId: TabId, fn: (d: ErDraft) => ErDraft) => void;
+  silentUpdateErDraft: (tabId: TabId, fn: (d: ErDraft) => ErDraft) => void;
+  resyncErDraft: (tabId: TabId, snapshot: import("../types/schema").SchemaSnapshot) => void;
+  discardErDraft: (tabId: TabId) => void;
+  removeErDraft: (tabId: TabId) => void;
+  setErDraftSelection: (tabId: TabId, sel: BuilderSelection) => void;
+  undoErDraft: (tabId: TabId) => void;
+  redoErDraft: (tabId: TabId) => void;
+
+  erEdgePoints: Record<TabId, Record<string, { x: number; y: number }>>;
+  setErEdgePoint: (tabId: TabId, edgeId: string, pt: { x: number; y: number } | null) => void;
 }
 
 export const useStore = create<State>((set, _get) => ({
@@ -199,10 +227,21 @@ export const useStore = create<State>((set, _get) => ({
       const { [id]: _myh, ...mysqlBuilderHistory } = s.mysqlBuilderHistory;
       const { [id]: _myf, ...mysqlBuilderFuture } = s.mysqlBuilderFuture;
       const { [id]: _myt, ..._mysqlBuilderHistoryTs } = s._mysqlBuilderHistoryTs;
+      const { [id]: _erm, ...erEditMode } = s.erEditMode;
+      const { [id]: _ersel, ...erSelection } = s.erSelection;
+      const { [id]: _erd, ...erDrafts } = s.erDrafts;
+      const { [id]: _erds, ...erDraftSelection } = s.erDraftSelection;
+      const { [id]: _erdh, ...erDraftHistory } = s.erDraftHistory;
+      const { [id]: _erdf, ...erDraftFuture } = s.erDraftFuture;
+      const { [id]: _erdt, ..._erDraftHistoryTs } = s._erDraftHistoryTs;
+      const { [id]: _erep, ...erEdgePoints } = s.erEdgePoints ?? {};
       return {
         tabs, activeTabId,
         pgBuilderDrafts, pgBuilderSelection, pgBuilderHistory, pgBuilderFuture, _pgBuilderHistoryTs,
         mysqlBuilderDrafts, mysqlBuilderSelection, mysqlBuilderHistory, mysqlBuilderFuture, _mysqlBuilderHistoryTs,
+        erEditMode, erSelection,
+        erDrafts, erDraftSelection, erDraftHistory, erDraftFuture, _erDraftHistoryTs,
+        erEdgePoints,
       };
     }),
   setActiveTab: (id) => set({ activeTabId: id }),
@@ -245,6 +284,13 @@ export const useStore = create<State>((set, _get) => ({
   erPositions: {},
   setErPositions: (id, positions) =>
     set((s) => ({ erPositions: { ...s.erPositions, [id]: positions } })),
+
+  erEditMode: {},
+  setErEditMode: (id, on) =>
+    set((s) => ({ erEditMode: { ...s.erEditMode, [id]: on } })),
+  erSelection: {},
+  setErSelection: (id, sel) =>
+    set((s) => ({ erSelection: { ...s.erSelection, [id]: sel } })),
 
   gridOffsets: {},
   setGridOffset: (tabId, table, offset) =>
@@ -328,6 +374,8 @@ export const useStore = create<State>((set, _get) => ({
   setTableExportTarget: (t) => set({ tableExportTarget: t }),
   dbExportTabId: null,
   setDbExportTabId: (id) => set({ dbExportTabId: id }),
+  dbImportTabId: null,
+  setDbImportTabId: (id) => set({ dbImportTabId: id }),
   editTableTarget: null,
   setEditTableTarget: (t) => set({ editTableTarget: t }),
 
@@ -519,6 +567,51 @@ export const useStore = create<State>((set, _get) => ({
       redoMysqlBuilderDraft: my.redo,
     };
   })(),
+  ...(() => {
+    const er = makeBuilderSlice<ErDraft, import("../types/schema").SchemaSnapshot, BuilderSelection>(
+      schemaToErDraft,
+      {
+        drafts: "erDrafts",
+        selection: "erDraftSelection",
+        history: "erDraftHistory",
+        future: "erDraftFuture",
+        historyTs: "_erDraftHistoryTs",
+      },
+      set,
+    );
+    return {
+      erDrafts: {} as Record<TabId, ErDraft>,
+      erDraftSelection: {} as Record<TabId, BuilderSelection>,
+      erDraftHistory: {} as Record<TabId, ErDraft[]>,
+      erDraftFuture: {} as Record<TabId, ErDraft[]>,
+      _erDraftHistoryTs: {} as Record<TabId, number>,
+      initErDraft: er.init,
+      updateErDraft: er.update,
+      silentUpdateErDraft: (tabId, fn) =>
+        set((s) => {
+          const draft = s.erDrafts?.[tabId];
+          if (!draft) return {};
+          return { erDrafts: { ...s.erDrafts, [tabId]: fn(draft) } };
+        }),
+      resyncErDraft: er.resync,
+      discardErDraft: er.discard,
+      removeErDraft: er.remove,
+      setErDraftSelection: er.setSelection,
+      undoErDraft: er.undo,
+      redoErDraft: er.redo,
+    };
+  })(),
+
+  erEdgePoints: {} as Record<TabId, Record<string, { x: number; y: number }>>,
+  setErEdgePoint: (tabId, edgeId, pt) =>
+    set((s) => {
+      const cur = s.erEdgePoints?.[tabId] ?? {};
+      if (pt === null) {
+        const { [edgeId]: _, ...rest } = cur;
+        return { erEdgePoints: { ...s.erEdgePoints, [tabId]: rest } };
+      }
+      return { erEdgePoints: { ...s.erEdgePoints, [tabId]: { ...cur, [edgeId]: pt } } };
+    }),
 }));
 
 export const useActiveTab = () => {

@@ -1,11 +1,11 @@
-import { X, Plus, Database, Download, FolderOpen, HardDrive } from "lucide-react";
+import { X, Plus, Database, Download, Upload, FolderOpen, HardDrive } from "lucide-react";
 import { useStore } from "../store";
 import { closeDb, closePgDb, closeMysqlDb } from "../ipc/commands";
 
 export default function TabBar() {
   const {
     tabs, activeTabId, setActiveTab, removeTab,
-    openContextMenu, setDbExportTabId, openNewTabChooser, builderDrafts,
+    openContextMenu, setDbExportTabId, setDbImportTabId, openNewTabChooser, builderDrafts,
     discardBuilderDraft,
   } = useStore();
 
@@ -45,10 +45,15 @@ export default function TabBar() {
             onContextMenu={(e) => {
               e.preventDefault();
               openContextMenu(e.clientX, e.clientY, [
-                ...(!isDraft && tab.engine === "sqlite" ? [{
+                ...(!isDraft && (tab.engine === "sqlite" || tab.engine === "postgres" || tab.engine === "mysql" || tab.engine === "mariadb") ? [{
                   label: "Export Database…",
                   icon: <Download size={12} />,
                   action: () => { setActiveTab(tab.id); setDbExportTabId(tab.id); },
+                }] : []),
+                ...(!isDraft && (tab.engine === "postgres" || tab.engine === "mysql" || tab.engine === "mariadb") ? [{
+                  label: "Import SQL…",
+                  icon: <Upload size={12} />,
+                  action: () => { setActiveTab(tab.id); setDbImportTabId(tab.id); },
                 }] : []),
                 ...(!isDraft && tab.engine !== "postgres" && tab.engine !== "mysql" && tab.engine !== "mariadb" ? [{
                   label: "Open in file manager",

@@ -8,4 +8,5 @@ pub mod mysql_introspect;
 pub mod paging;
 pub mod pg_introspect;
 pub mod pool;
+pub mod sql_splitter;
 pub mod types;

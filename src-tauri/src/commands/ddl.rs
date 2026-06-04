@@ -124,3 +124,65 @@ pub fn execute_ddl(tab_id: String, sql: String, state: State<AppState>) -> Resul
     conn.execute_batch(&sql)?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn apply_schema_plan(
+    tab_id: String,
+    statements: Vec<String>,
+    requires_fk_off: bool,
+    rebuilt_tables: Vec<String>,
+    state: State<AppState>,
+) -> Result<()> {
+    let pool = state.require_pool(&tab_id)?;
+    let conn = pool.get()?;
+
+    if requires_fk_off {
+        conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
+    }
+
+    conn.execute_batch("BEGIN IMMEDIATE;")?;
+
+    let result: Result<()> = (|| {
+        for stmt in &statements {
+            if !stmt.trim().is_empty() {
+                conn.execute_batch(stmt)?;
+            }
+        }
+
+
+        if requires_fk_off && !rebuilt_tables.is_empty() {
+            for table in &rebuilt_tables {
+                let check_sql = format!(
+                    "PRAGMA foreign_key_check(\"{}\")",
+                    table.replace('"', "\"\"")
+                );
+                let mut check_stmt = conn.prepare(&check_sql)?;
+                let mut rows = check_stmt.query([])?;
+                if rows.next()?.is_some() {
+                    return Err(crate::error::Error::BadInput(format!(
+                        "Foreign key violations detected in table \"{}\" after schema change — changes rolled back.",
+                        table
+                    )));
+                }
+            }
+        }
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT;")?;
+            if requires_fk_off {
+                conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK;");
+            if requires_fk_off {
+                let _ = conn.execute_batch("PRAGMA foreign_keys=ON;");
+            }
+            Err(e)
+        }
+    }
+}

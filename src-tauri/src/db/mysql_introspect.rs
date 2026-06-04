@@ -189,7 +189,7 @@ async fn get_mysql_tables_simple(pool: &sqlx::MySqlPool, db: &str) -> Result<Vec
         let indexes = get_simple_indexes(pool, &name).await?;
         let foreign_keys = get_simple_fks(pool, &name).await?;
         let row_count_estimate = get_row_count_estimate(pool, db, &name).await;
-        tables.push(TableSchema { name, columns, indexes, foreign_keys, row_count_estimate });
+        tables.push(TableSchema { name, columns, indexes, foreign_keys, row_count_estimate, sql: String::new() });
     }
     Ok(tables)
 }

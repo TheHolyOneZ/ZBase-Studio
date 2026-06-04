@@ -29,6 +29,7 @@ export interface TableSchema {
   indexes: IndexInfo[];
   foreign_keys: ForeignKey[];
   row_count_estimate: number | null;
+  sql?: string;
 }
 
 export interface ViewSchema {

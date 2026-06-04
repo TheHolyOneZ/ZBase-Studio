@@ -16,6 +16,7 @@
   <p>
     <a href="https://zsync.eu/zbase-studio/"><strong>⬇ Download Installers</strong></a> ·
     <a href="#engine-feature-comparison">Feature Matrix</a> ·
+    <a href="#er-diagram">ER Diagram</a> ·
     <a href="#schema-builder">Schema Builder</a> ·
     <a href="#license">License</a>
   </p>
@@ -45,6 +46,8 @@ ZBase Studio is a native cross-platform database GUI that lets you browse, query
 - [Query Editor](#query-editor)
 - [Schema Tree (Sidebar)](#schema-tree-sidebar)
 - [ER Diagram](#er-diagram)
+  - [View Mode](#view-mode)
+  - [Edit Mode (SQLite)](#edit-mode-sqlite)
 - [Schema Builder](#schema-builder)
   - [SQLite Builder](#sqlite-builder)
   - [PostgreSQL Builder](#postgresql-builder)
@@ -83,14 +86,15 @@ ZBase Studio is a native cross-platform database GUI that lets you browse, query
 | Inline cell editing | ✅ | ❌ | ✅ | ✅ | ✅ |
 | Add / delete rows | ✅ | ❌ | ✅ | ✅ | ✅ |
 | Query editor | ✅ | ✅ | ✅ | ✅ | ✅ |
-| ER Diagram | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ER Diagram (view) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ER Diagram (edit) | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Stats tab | ✅ | ❌ | ✅ | ✅ | ✅ |
 | Full-database search | ✅ | ❌ | ✅ | ✅ | ✅ |
 | Visual schema builder | ✅ | ❌ | ✅ | ✅ | ✅ |
 | Export table | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Export whole database | ✅ | ✅ (copy) | ❌ | ❌ | ❌ |
+| Export whole database | ✅ | ✅ (copy) | ✅ | ✅ | ✅ |
 | Import CSV | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Import SQL file | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Import SQL file | ✅ | ❌ | ✅ | ✅ | ✅ |
 | Transaction bar | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 > [!TIP]
@@ -257,14 +261,51 @@ Right-click a table:
 
 ## ER Diagram
 
-The **ER Diagram** tab renders your full schema as an interactive node graph.
+The **ER Diagram** tab renders your full schema as an interactive node graph. On SQLite, it doubles as a full visual schema editor.
+
+### View Mode
+
+Available on all five engines.
 
 - Tables as cards — column names, types, **PK** (yellow) and **FK** (cyan) badges
 - Lines connecting tables with FK relationships, labeled `col → referenced_col`
 - Drag nodes to rearrange — positions persist per tab
 - **Auto Layout** button, mini-map, zoom, and pan controls
 
-Available on all five engines.
+### Edit Mode (SQLite)
+
+Toggle **Edit** in the top toolbar to enter the visual schema builder. Every change is auto-saved to the database within 400 ms — no separate Apply step.
+
+> [!NOTE]
+> Edit mode is SQLite-only. The toggle is disabled on all other engines.
+
+**Building tables**
+- Double-click anywhere on the canvas to create a new table (default `id INTEGER PRIMARY KEY`)
+- Click a node to open the side panel; click the background to close it
+- Select a node and press <kbd>Delete</kbd> / <kbd>Backspace</kbd> to drop it — a confirmation modal shows estimated row count before anything is deleted
+
+**Side panel**
+- **Table tab** — edit column name, type, and all constraints: PK, AI (autoincrement), NOT NULL, UNIQUE, FK, DEFAULT, CHECK, COLLATE; drag columns to reorder; composite primary key; table-level CHECK constraints; WITHOUT ROWID and STRICT mode
+- **Indexes tab** — add and remove indexes on the selected table; each index supports UNIQUE and a partial WHERE clause; index count shown as a badge
+
+**Drawing FK relationships**
+- Each column row has a **source handle** (right side, large dot) and a **target handle** (left side, socket)
+- Drag from a source handle to any target handle on another table → a popover appears to set **ON DELETE** and **ON UPDATE** actions
+- FK edges show a type-affinity mismatch badge (⚠) if the source and target column types differ in SQLite affinity
+- Non-default ON DELETE / ON UPDATE actions are shown as compact badges on the edge
+
+**Editing & deleting FKs**
+- Right-click any FK edge → **Edit FK actions…** to change ON DELETE / ON UPDATE without redrawing the line
+- Right-click any FK edge → **Delete FK** to remove the constraint
+
+**Cable management**
+- Drag the midpoint dot on any edge to reshape its curve — useful when lines overlap
+- Double-click the midpoint dot to reset the edge back to the default auto-routed bezier
+
+**Undo / Redo / Discard**
+- <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Cmd</kbd>+<kbd>Z</kbd> — undo; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> — redo (session-scoped, up to 50 steps per tab)
+- **Discard** in the toolbar reverts all unsaved edits back to the live schema in one step
+- A dirty dot on the toolbar indicates there are pending changes
 
 ---
 
@@ -428,12 +469,30 @@ Click **Export** in the toolbar, or right-click a table → **Export table…**
 
 Export is streamed with a live row counter — large tables are safe to export.
 
-### Entire SQLite database
+### Entire database
 
-Right-click a tab → **Export Database…**
+Right-click a tab → **Export Database…** (available on SQLite, PostgreSQL, MySQL, and MariaDB).
 
-- **SQL Dump** — structure + data, with DROP/IF NOT EXISTS/transaction/FK-check options
-- **SQLite binary backup** — byte-perfect copy using SQLite's online backup API
+**SQLite**
+- **SQL Dump** — structure + data, with DROP / IF NOT EXISTS / transaction / FK-check toggles
+- **Binary backup** — byte-perfect `.db` copy via SQLite's online backup API
+
+**PostgreSQL**
+- SQL dump with toggles for structure, data, views, functions, triggers, sequences, enums
+- DROP … IF EXISTS CASCADE, wrap in transaction, INSERT or INSERT … ON CONFLICT DO NOTHING
+- "Disable triggers" option (`SET session_replication_role`) — requires superuser; off by default
+- FK constraints emitted as `ALTER TABLE … ADD CONSTRAINT` after all tables, preventing FK-cycle issues on re-import
+- SERIAL / BIGSERIAL / SMALLSERIAL shorthand — sequences survive `DROP TABLE CASCADE`
+
+**MySQL / MariaDB**
+- SQL dump with toggles for structure, data, views, routines (procedures + functions), triggers
+- DROP … IF EXISTS, wrap in transaction, INSERT / REPLACE / INSERT IGNORE
+- `SET FOREIGN_KEY_CHECKS = 0`, `SET UNIQUE_CHECKS = 0` for fast import
+- `SHOW CREATE TABLE` used verbatim — preserves `AUTO_INCREMENT`, MariaDB-specific types (`UUID`, `INET4`, `INVISIBLE` columns), storage engine, charset
+- Tables emitted in FK dependency order — no FK errors on re-import for non-cyclic schemas
+- Blobs encoded as `0xHEX`; procedures and triggers wrapped with `DELIMITER //`
+
+Export streams data in configurable batches (default 500 rows) with a live progress bar. Cancel at any time.
 
 ---
 
@@ -443,12 +502,22 @@ Right-click a tab → **Export Database…**
 
 **`+`** → **From CSV…** → pick file → preview/configure columns → choose target database → import with live progress.
 
-### From SQL script
+### From SQL script (SQLite)
 
 Open a `.sql` file via file picker — small scripts load into the query editor; large scripts execute directly.
 
 > [!NOTE]
-> MySQL-only statements in a script are detected and skipped automatically. A toast reports how many were skipped.
+> MySQL-flavoured dumps are auto-detected and translated when importing into SQLite. A toast reports any skipped statements.
+
+### From SQL dump (PostgreSQL, MySQL, MariaDB)
+
+Right-click a PostgreSQL, MySQL, or MariaDB tab → **Import SQL…** → pick a `.sql` file.
+
+- Dialect-aware splitter: handles dollar-quotes (`$$`), `DELIMITER //`, backticks, `#` comments, `/*!NNN …*/` conditional comments
+- `BEGIN` / `COMMIT` / `START TRANSACTION` skipped automatically — each statement runs in auto-commit
+- All statement types supported including `CREATE PROCEDURE`, `CREATE TRIGGER`, `CREATE EVENT`
+- **Stop on first error** or **continue** mode
+- Live progress bar; error summary lists each failure with statement preview and error message
 
 ---
 
@@ -476,7 +545,7 @@ Every database lives in its own tab — open as many as you need simultaneously.
 | 🔵 **draft** | SQLite builder draft |
 | *(none)* | SQLite |
 
-Right-click a tab: **Export Database**, **Open in file manager**, **Close tab**.
+Right-click a tab: **Export Database…**, **Import SQL…** (PostgreSQL, MySQL, MariaDB), **Open in file manager**, **Close tab**.
 
 ---
 

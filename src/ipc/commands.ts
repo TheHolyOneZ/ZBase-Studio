@@ -74,6 +74,9 @@ export const dropObject = (req: DropRequest) =>
 export const executeDdl = (tabId: string, sql: string) =>
   invoke<void>("execute_ddl", { tabId, sql });
 
+export const applySchemaPlan = (tabId: string, statements: string[], requiresFkOff: boolean, rebuiltTables: string[]) =>
+  invoke<void>("apply_schema_plan", { tabId, statements, requiresFkOff, rebuiltTables });
+
 export const computeOverview = (tabId: string) =>
   invoke<DbOverview>("compute_overview", { tabId });
 
@@ -122,6 +125,51 @@ export interface DbExportRequest {
 export const exportDatabase = (req: DbExportRequest & { job_id?: string }) =>
   invoke<string>("export_database", { req });
 
+export interface PgDbExportRequest {
+  tab_id: string;
+  path: string;
+  job_id?: string;
+  include_structure?: boolean;
+  include_data?: boolean;
+  include_views?: boolean;
+  include_functions?: boolean;
+  include_triggers?: boolean;
+  include_enums?: boolean;
+  drop_objects?: boolean;
+  if_not_exists?: boolean;
+  disable_triggers?: boolean;
+  wrap_transaction?: boolean;
+  insert_mode?: "insert" | "on_conflict_do_nothing";
+  batch_size?: number;
+  add_comments?: boolean;
+}
+
+export const exportPgDatabase = (req: PgDbExportRequest) =>
+  invoke<string>("export_pg_database", { req });
+
+export interface MysqlDbExportRequest {
+  tab_id: string;
+  path: string;
+  job_id?: string;
+  include_structure?: boolean;
+  include_data?: boolean;
+  include_views?: boolean;
+  include_routines?: boolean;
+  include_triggers?: boolean;
+  drop_objects?: boolean;
+  if_not_exists?: boolean;
+  disable_fk_checks?: boolean;
+  disable_unique_checks?: boolean;
+  wrap_transaction?: boolean;
+  insert_mode?: "insert" | "replace" | "ignore";
+  batch_size?: number;
+  add_comments?: boolean;
+  charset_header?: boolean;
+}
+
+export const exportMysqlDatabase = (req: MysqlDbExportRequest) =>
+  invoke<string>("export_mysql_database", { req });
+
 export type FileKind =
   | { kind: "sqlite" }
   | { kind: "duckdb" }
@@ -135,6 +183,19 @@ export const readSqlFile = (path: string) =>
 
 export const executeSqlFile = (tabId: string, path: string) =>
   invoke<{ duration_ms: number; statements_hint: number; skipped_hint: number; skipped_detail: string | null }>("execute_sql_file", { tabId, path });
+
+export interface ImportSqlResult {
+  executed: number;
+  failed: number;
+  duration_ms: number;
+  errors: { index: number; preview: string; message: string }[];
+}
+
+export const executePgSqlFile = (tabId: string, path: string, stopOnError: boolean) =>
+  invoke<ImportSqlResult>("execute_pg_sql_file", { tabId, path, stopOnError });
+
+export const executeMysqlSqlFile = (tabId: string, path: string, stopOnError: boolean) =>
+  invoke<ImportSqlResult>("execute_mysql_sql_file", { tabId, path, stopOnError });
 
 export interface CsvColumnPreview {
   name: string;

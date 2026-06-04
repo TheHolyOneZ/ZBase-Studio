@@ -37,6 +37,7 @@ pub struct TableSchema {
     pub indexes: Vec<IndexInfo>,
     pub foreign_keys: Vec<ForeignKey>,
     pub row_count_estimate: Option<i64>,
+    pub sql: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +82,8 @@ fn get_tables(conn: &Connection) -> Result<Vec<TableSchema>> {
         let indexes = get_indexes(conn, &name)?;
         let foreign_keys = get_foreign_keys(conn, &name)?;
         let row_count_estimate = get_row_count_estimate(conn, &name);
-        tables.push(TableSchema { name, columns, indexes, foreign_keys, row_count_estimate });
+        let sql = get_table_sql(conn, &name).unwrap_or_default();
+        tables.push(TableSchema { name, columns, indexes, foreign_keys, row_count_estimate, sql });
     }
     Ok(tables)
 }
@@ -142,6 +144,15 @@ fn get_foreign_keys(conn: &Connection, table: &str) -> Result<Vec<ForeignKey>> {
         .filter_map(|r| r.ok())
         .collect();
     Ok(fks)
+}
+
+fn get_table_sql(conn: &Connection, table: &str) -> Result<String> {
+    conn.query_row(
+        "SELECT COALESCE(sql, '') FROM sqlite_master WHERE type='table' AND name=?1",
+        [table],
+        |r| r.get::<_, String>(0),
+    )
+    .map_err(Into::into)
 }
 
 fn get_row_count_estimate(conn: &Connection, table: &str) -> Option<i64> {

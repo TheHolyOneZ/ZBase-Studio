@@ -34,6 +34,7 @@ fn get_duck_tables(conn: &duckdb::Connection) -> Result<Vec<TableSchema>> {
             indexes: vec![],
             foreign_keys: vec![],
             row_count_estimate,
+            sql: String::new(),
         });
     }
     Ok(tables)

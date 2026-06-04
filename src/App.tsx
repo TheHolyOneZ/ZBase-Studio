@@ -6,6 +6,7 @@ import ToastHost from "./components/common/ToastHost";
 import ContextMenu from "./components/common/ContextMenu";
 import ExportDialog from "./components/export/ExportDialog";
 import DatabaseExportDialog from "./components/export/DatabaseExportDialog";
+import DatabaseImportDialog from "./components/import/DatabaseImportDialog";
 import NewTabChooser from "./components/connection/NewTabChooser";
 import TemplatePicker from "./components/connection/TemplatePicker";
 import SchemaImportDialog from "./components/connection/SchemaImportDialog";
@@ -23,6 +24,7 @@ export default function App() {
   const {
     tableExportTarget, setTableExportTarget,
     dbExportTabId, setDbExportTabId,
+    dbImportTabId, setDbImportTabId,
     editTableTarget, setEditTableTarget,
     schemas,
     newTabChooserOpen, closeNewTabChooser,
@@ -150,6 +152,11 @@ export default function App() {
         open={dbExportTabId !== null}
         onClose={() => setDbExportTabId(null)}
         tabId={dbExportTabId ?? ""}
+      />
+      <DatabaseImportDialog
+        open={dbImportTabId !== null}
+        onClose={() => setDbImportTabId(null)}
+        tabId={dbImportTabId ?? ""}
       />
 
 

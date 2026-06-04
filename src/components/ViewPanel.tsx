@@ -139,7 +139,7 @@ export default function ViewPanel() {
           <QueryEditor tabId={activeTab.id} />
         )}
         {activeTab.viewMode === "er" && schema && (
-          <ErCanvas tabId={activeTab.id} schema={schema} />
+          <ErCanvas tabId={activeTab.id} schema={schema} engine={activeTab.engine} />
         )}
         {activeTab.viewMode === "er" && !schema && (
           <EmptyState title="No schema loaded" description="Open a database first" />

@@ -150,7 +150,7 @@ export default function AboutModal({ open, onClose }: Props) {
                     fontSize: 10, fontFamily: "monospace", fontWeight: 600, padding: "2px 8px", borderRadius: 20,
                     color: "var(--accent)", background: "rgba(46,189,133,0.1)", border: "1px solid rgba(46,189,133,0.25)", letterSpacing: "0.07em",
                   }}>
-                    v0.1.0
+                    v0.2.0
                   </span>
                   <p style={{ fontSize: 11.5, color: "var(--fg-subtle)", textAlign: "center", lineHeight: 1.65, maxWidth: 310, margin: "4px 0 0" }}>
                     "Built because managing five engines shouldn't require five apps."
